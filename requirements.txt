@@ -4,3 +4,10 @@ gunicorn
 pydantic[email]
 sqlalchemy
 asyncpg
+jwt
+psycopg2
+python-jose
+passlib
+python-dotenv
+python-multipart
+passlib[bcrypt]
