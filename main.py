@@ -7,6 +7,7 @@ from auth import (
     authenticate_user,
     create_cookie,
     get_current_user,
+    get_private_user,
     get_user,
     verify_password,
     delete_access_token
@@ -63,7 +64,7 @@ async def read_user_me(current_user: Annotated[UserBase, Depends(get_current_use
 
 
 @app.get('/user/{username}', response_model=UserPrivate)
-async def read_user(user: Annotated[UserBase, Depends(get_user)]):
+async def read_user(user: Annotated[UserBase, Depends(get_private_user)]):
     if not user:
         raise HTTPException(status_code=404, detail={"message": "User not found", "status_code": 404})
     else:

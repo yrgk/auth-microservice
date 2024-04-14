@@ -28,6 +28,11 @@ def get_password_hash(password):
 
 def get_user(username: str):
     with Session(engine) as db:
+        return db.query(User).filter(User.username == username).first()
+
+
+def get_private_user(username: str):
+    with Session(engine) as db:
         return db.query(User.id, User.username, User.email).filter(User.username == username).first()
 
 
