@@ -1,21 +1,21 @@
 from typing import Annotated
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 
 from models import User
-from database import get_db, engine
-from config import SECRET_KEY, ALGORITHM
-from schemas import TokenData
+from cookie import OAuth2PasswordBearerWithCookie
+from database import engine
+from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_TIME
+from schemas import UserBase
 
-EXPIRATION_TIME = timedelta(seconds=30)
+EXPIRATION_TIME = timedelta(days=int(ACCESS_TOKEN_EXPIRE_TIME))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearerWithCookie(tokenUrl="/token")
 
 
 def verify_password(plain_password, hashed_password):
@@ -40,32 +40,50 @@ def authenticate_user(username: str, password: str):
     return user
 
 
+def create_access_token(user: UserBase, response):
+    access_token_expires = timedelta(days=int(ACCESS_TOKEN_EXPIRE_TIME))
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    new_response = JSONResponse(response)
+    new_response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
+    return new_response
+
+
+def verify_access_token(token: str):
+    try:
+        decoded_data = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return decoded_data
+    except JWTError:
+        return None
+
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+        expire = datetime.now(timezone.utc) + timedelta(days=14)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 
+def delete_access_token():
+    response = JSONResponse({"message": "success", "status_code": 200})
+    response.delete_cookie(key='access_token')
+    return response
+
+
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except JWTError:
-        raise credentials_exception
-    user = get_user(username=token_data.username)
-    if user is None:
-        raise credentials_exception
+    decoded_data = verify_access_token(token)
+    if not decoded_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = get_user(username=decoded_data["sub"])
+    if not user:
+        raise HTTPException(status_code=400, detail="User not found")
     return user

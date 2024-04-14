@@ -1,15 +1,18 @@
-from datetime import timedelta
 from typing import Annotated
 from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.responses import RedirectResponse
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 
-from auth import authenticate_user, create_access_token, get_current_user
+from auth import (
+    authenticate_user,
+    create_access_token,
+    get_current_user,
+    get_user,
+    verify_password,
+    delete_access_token
+)
 from models import User
-from config import ACCESS_TOKEN_EXPIRE_TIME
-from schemas import Token, UserAdd, UserBase
+from schemas import UserAdd, UserBase, UserPrivate, SuccesfulResponse
 from database import get_db, Base, engine
 
 
@@ -19,12 +22,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 Base.metadata.create_all(engine)
 
 
-@app.post("/register", response_model=UserBase)
+@app.post("/register", response_model=SuccesfulResponse)
 async def register(data: UserAdd, db: Session = Depends(get_db)):
-    if data.email in db.query(User.email).all():
+    if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(status_code=409, detail="this email is already taken")
 
-    if data.username in db.query(User.username).all():
+    if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=409, detail="this username is already taken")
 
     hashed_password = pwd_context.hash(data.password)
@@ -35,43 +38,71 @@ async def register(data: UserAdd, db: Session = Depends(get_db)):
         password=hashed_password
     )
 
+
     db.add(new_user)
     db.commit()
-    db.refresh(new_user)
 
-    # access_token_expires = timedelta(minutes=int(ACCESS_TOKEN_EXPIRE_TIME))
-    # access_token = create_access_token(
-    #     data={"sub": new_user.username}, expires_delta=access_token_expires
-    # )
-    # return Token(access_token=access_token, token_type="bearer")
-    return new_user
+    return create_access_token(new_user, {"message": "success", "status_code": 200})
 
 
-@app.post("/token")
-async def login_for_access_token(
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
-) -> Token:
-    user = authenticate_user(form_data.username, form_data.password)
+@app.post("/token", response_model=SuccesfulResponse)
+async def login(username: str, password: str):
+    user = authenticate_user(username, password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(days=int(ACCESS_TOKEN_EXPIRE_TIME))
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    return Token(access_token=access_token, token_type="bearer")
+
+    return create_access_token(user, {"message": "success", "status_code": 200})
 
 
-@app.get("/users/me/", response_model=UserBase)
-async def read_users_me(current_user: Annotated[UserBase, Depends(get_current_user)]):
+@app.get("/user/me/", response_model=UserPrivate)
+async def read_user_me(current_user: Annotated[UserBase, Depends(get_current_user)]):
     return current_user
 
 
+@app.get('/user/{username}', response_model=UserBase)
+async def read_user(user: Annotated[UserBase, Depends(get_user)]):
+    if not user:
+        raise HTTPException(status_code=404, detail={"message": "User not found", "status_code": 404})
+    else:
+        return user
+
+
+@app.put('/user/change/username', response_model=UserBase)
+async def change_username(username: str, password: str, current_user: Annotated[UserBase, Depends(get_current_user)], db: Session = Depends(get_db)):
+    if not verify_password(password, current_user.password):
+        raise HTTPException(status_code=403, detail="Incorrect password")
+
+    if username == current_user.username:
+        return current_user
+
+    if get_user(username):
+        raise HTTPException(status_code=409, detail="this username is already taken")
+
+    user = db.query(User).filter(User.username == current_user.username).first()
+    user.username = username
+    db.commit()
+    db.refresh(user)
+
+    return create_access_token(user, {"username": user.username})
+
+
+@app.delete('/user/delete', response_model=SuccesfulResponse)
+async def delete_user(password: str, current_user: Annotated[UserBase, Depends(get_current_user)], db: Session = Depends(get_db)):
+    user = get_user(current_user.username)
+
+    if not verify_password(password, current_user.password):
+        raise HTTPException(status_code=403, detail="Incorrect password")
+
+    db.delete(user)
+    db.commit()
+
+    return delete_access_token()
+
+
 @app.get('/logout')
-def logout():
-    response = RedirectResponse(url='/',status_code=302)
-    response.set_cookie(key='access_token',value='', httponly=True)
-    return response
+async def logout():
+    return delete_access_token()

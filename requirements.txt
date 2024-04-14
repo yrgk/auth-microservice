@@ -3,8 +3,6 @@ uvicorn
 gunicorn
 pydantic[email]
 sqlalchemy
-asyncpg
-jwt
 psycopg2
 python-jose
 passlib

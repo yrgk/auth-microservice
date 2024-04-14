@@ -14,11 +14,12 @@ class UserAdd(BaseModel):
     password: str
 
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
+class UserPrivate(BaseModel):
+    id: int
+    username: str
+    email: EmailStr
 
 
-class TokenData(BaseModel):
-    username: str | None = None
-    scopes: list[str] = []
+class SuccesfulResponse(BaseModel):
+    message: str
+    status_code: int = 200
