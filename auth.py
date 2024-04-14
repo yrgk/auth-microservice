@@ -28,7 +28,7 @@ def get_password_hash(password):
 
 def get_user(username: str):
     with Session(engine) as db:
-        return db.query(User).filter(User.username == username).first()
+        return db.query(User.id, User.username, User.email).filter(User.username == username).first()
 
 
 def authenticate_user(username: str, password: str):
@@ -40,12 +40,12 @@ def authenticate_user(username: str, password: str):
     return user
 
 
-def create_access_token(user: UserBase, response):
+def create_cookie(user: UserBase):
     access_token_expires = timedelta(days=int(ACCESS_TOKEN_EXPIRE_TIME))
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-    new_response = JSONResponse(response)
+    new_response = JSONResponse({"message": "success", "status_code": 200})
     new_response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
     return new_response
 

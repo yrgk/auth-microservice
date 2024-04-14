@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 
 from auth import (
     authenticate_user,
-    create_access_token,
+    create_cookie,
     get_current_user,
     get_user,
     verify_password,
@@ -38,11 +38,10 @@ async def register(data: UserAdd, db: Session = Depends(get_db)):
         password=hashed_password
     )
 
-
     db.add(new_user)
     db.commit()
 
-    return create_access_token(new_user, {"message": "success", "status_code": 200})
+    return create_cookie(new_user)
 
 
 @app.post("/token", response_model=SuccesfulResponse)
@@ -55,7 +54,7 @@ async def login(username: str, password: str):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return create_access_token(user, {"message": "success", "status_code": 200})
+    return create_cookie(user)
 
 
 @app.get("/user/me/", response_model=UserPrivate)
@@ -63,7 +62,7 @@ async def read_user_me(current_user: Annotated[UserBase, Depends(get_current_use
     return current_user
 
 
-@app.get('/user/{username}', response_model=UserBase)
+@app.get('/user/{username}', response_model=UserPrivate)
 async def read_user(user: Annotated[UserBase, Depends(get_user)]):
     if not user:
         raise HTTPException(status_code=404, detail={"message": "User not found", "status_code": 404})
@@ -71,13 +70,13 @@ async def read_user(user: Annotated[UserBase, Depends(get_user)]):
         return user
 
 
-@app.put('/user/change/username', response_model=UserBase)
+@app.put('/user/change/username', response_model=SuccesfulResponse)
 async def change_username(username: str, password: str, current_user: Annotated[UserBase, Depends(get_current_user)], db: Session = Depends(get_db)):
     if not verify_password(password, current_user.password):
         raise HTTPException(status_code=403, detail="Incorrect password")
 
     if username == current_user.username:
-        return current_user
+        return {"message": "success", "status_code": 200}
 
     if get_user(username):
         raise HTTPException(status_code=409, detail="this username is already taken")
@@ -87,7 +86,7 @@ async def change_username(username: str, password: str, current_user: Annotated[
     db.commit()
     db.refresh(user)
 
-    return create_access_token(user, {"username": user.username})
+    return create_cookie(user)
 
 
 @app.delete('/user/delete', response_model=SuccesfulResponse)
