@@ -90,6 +90,19 @@ async def change_username(username: str, password: str, current_user: Annotated[
     return create_cookie(user)
 
 
+@app.put('/user/change/password', response_model=SuccesfulResponse)
+async def change_password(current_password: str, new_password: str, current_user: Annotated[UserBase, Depends(get_current_user)], db: Session = Depends(get_db)):
+    if not verify_password(current_password, current_user.password):
+        raise HTTPException(status_code=403, detail="Incorrect password")
+
+    user = db.query(User).filter(User.username == current_user.username).first()
+    user.password = new_password
+    db.commit()
+    db.refresh(user)
+
+    return create_cookie(user)
+
+
 @app.delete('/user/delete', response_model=SuccesfulResponse)
 async def delete_user(password: str, current_user: Annotated[UserBase, Depends(get_current_user)], db: Session = Depends(get_db)):
     user = get_user(current_user.username)
